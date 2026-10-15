@@ -138,6 +138,18 @@
   @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
   .phase { font-size: 12px; color: var(--muted); margin-top: 8px; min-height: 16px; }
 
+  .topbar { gap: 16px; }
+  .settings { margin-bottom: 30px; padding: 22px 26px; display: none; animation: rise .3s ease both; }
+  .settings.show { display: block; }
+  .settings h2 { font-size: 16px; margin: 0 0 6px; }
+  .settings p { font-size: 13px; color: var(--muted); margin: 0 0 18px; }
+  .settings .input-wrap { margin-bottom: 14px; padding-right: 18px; }
+  .settings .row { display: flex; gap: 14px; justify-content: flex-end; flex-wrap: wrap; }
+  .settings .row .btn { padding: 12px 20px; font-weight: 700; font-size: 14px; }
+  .conn { font-size: 12px; color: var(--muted); padding: 0 14px; display: flex; align-items: center; gap: 8px; border-radius: 14px; height: 46px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); box-shadow: 0 0 8px var(--ok); }
+  .dot.off { background: var(--err); }
   footer { margin-top: auto; padding-top: 48px; color: var(--muted); font-size: 12px; text-align: center; max-width: 520px; }
 
   @media (max-width: 560px) {
@@ -152,6 +164,10 @@
 </head>
 <body>
   <div class="topbar">
+    <div class="conn inset" id="conn" title="Сервер"><span class="dot" id="dot"></span><span id="connText">Сервер</span></div>
+    <button class="btn icon-btn" id="gear" title="Настройки сервера" aria-label="Настройки сервера">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+    </button>
     <button class="btn icon-btn" id="theme" title="Сменить тему" aria-label="Сменить тему">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
     </button>
@@ -171,6 +187,17 @@
   </header>
 
   <main>
+    <form class="settings raised" id="settings" autocomplete="off">
+      <h2>Сервер загрузки</h2>
+      <p>Страница работает в браузере, а само скачивание делает ваш сервер с yt-dlp (Render, VPS или компьютер). Укажите его адрес и пароль — они сохранятся только на этом устройстве.</p>
+      <label class="input-wrap inset"><input id="api" type="url" placeholder="https://insta-saver-xxxx.onrender.com" aria-label="Адрес сервера"></label>
+      <label class="input-wrap inset"><input id="pwd" type="password" placeholder="Пароль (APP_PASSWORD)" aria-label="Пароль сервера"></label>
+      <div class="row">
+        <button type="button" class="btn" id="cancel">Закрыть</button>
+        <button type="submit" class="btn go">Сохранить</button>
+      </div>
+    </form>
+
     <form class="card raised" id="form" autocomplete="off">
       <div class="field">
         <label class="input-wrap inset">
@@ -191,6 +218,45 @@
 
 <script>
 const $ = s => document.querySelector(s);
+
+// --- server config: ?api=...&key=... in URL, or saved per device ---
+const store = { get: k => { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+                set: (k, v) => { try { localStorage.setItem(k, v); } catch {} } };
+const qs = new URLSearchParams(location.search);
+if (qs.has('api')) store.set('api', qs.get('api'));
+if (qs.has('key')) store.set('key', qs.get('key'));
+if (qs.has('api') || qs.has('key')) history.replaceState(null, '', location.pathname);
+const isStatic = location.hostname.endsWith('github.io') || location.protocol === 'file:';
+const apiBase = () => (store.get('api') || (isStatic ? '' : location.origin)).replace(/\/+$/, '');
+const apiFetch = path => {
+  if (!apiBase()) { openSettings(); return Promise.reject(new Error('Сначала укажите адрес сервера в настройках ⚙')); }
+  const key = store.get('key');
+  return fetch(apiBase() + path, key ? { headers: { 'X-Password': key } } : {});
+};
+const settings = $('#settings');
+function openSettings() { $('#api').value = store.get('api'); $('#pwd').value = store.get('key'); settings.classList.add('show'); $('#api').focus(); }
+$('#gear').onclick = () => settings.classList.contains('show') ? settings.classList.remove('show') : openSettings();
+$('#cancel').onclick = () => settings.classList.remove('show');
+settings.onsubmit = e => {
+  e.preventDefault();
+  let v = $('#api').value.trim();
+  if (v && !/^https?:\/\//.test(v)) v = 'https://' + v;
+  store.set('api', v); store.set('key', $('#pwd').value);
+  settings.classList.remove('show'); ping();
+};
+async function ping() {
+  const dot = $('#dot'), t = $('#connText');
+  if (!apiBase()) { dot.className = 'dot off'; t.textContent = 'Не настроен'; return; }
+  dot.className = 'dot'; t.textContent = 'Проверка…';
+  try {
+    const r = await apiFetch('/api/ping');
+    const ok = r.ok;
+    dot.className = 'dot ' + (ok ? 'on' : 'off');
+    t.textContent = ok ? 'Подключено' : r.status === 401 ? 'Неверный пароль' : 'Ошибка ' + r.status;
+  } catch { dot.className = 'dot off'; t.textContent = 'Нет связи'; }
+}
+ping();
+if (isStatic && !store.get('api')) openSettings();
 const form = $('#form'), urlInput = $('#url'), go = $('#go'), statusEl = $('#status'), results = $('#results');
 
 // theme toggle (remembered per browser)
@@ -230,13 +296,13 @@ form.onsubmit = async e => {
   go.disabled = true; results.innerHTML = '';
   setStatus('load', 'Получаем информацию о видео…');
   try {
-    const r = await fetch('/api/info?url=' + encodeURIComponent(url));
+    const r = await apiFetch('/api/info?url=' + encodeURIComponent(url));
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Ошибка сервера');
     clearStatus();
     render(url, data);
   } catch (err) {
-    setStatus('err', err.message === 'Failed to fetch' ? 'Сервер не запущен: python3 server.py' : err.message);
+    setStatus('err', err.message === 'Failed to fetch' ? 'Сервер недоступен (на Render первый запуск после сна ~1 мин) — проверьте адрес в ⚙' : err.message);
   } finally { go.disabled = false; }
 };
 
@@ -284,7 +350,7 @@ async function download(url, index, el, btn) {
   label.textContent = 'Подготовка…';
   phase.textContent = 'Сервер скачивает лучшие потоки видео и аудио и склеивает их';
   try {
-    const r = await fetch(`/api/download?url=${encodeURIComponent(url)}&index=${index}`);
+    const r = await apiFetch(`/api/download?url=${encodeURIComponent(url)}&index=${index}`);
     if (!r.ok) { const d = await r.json().catch(() => ({})); throw new Error(d.error || 'Ошибка загрузки'); }
     const total = +r.headers.get('Content-Length') || 0;
     const name = decodeURIComponent(r.headers.get('X-Filename') || 'instagram.mp4');

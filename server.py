@@ -139,17 +139,34 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def end_headers(self):
+        # CORS: фронтенд может жить на другом домене (GitHub Pages)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Headers", "X-Password")
+        self.send_header("Access-Control-Expose-Headers", "Content-Length, X-Filename")
+        super().end_headers()
+
+    def do_OPTIONS(self):
+        self.send_response(HTTPStatus.NO_CONTENT)
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Max-Age", "86400")
+        self.end_headers()
+
     def authorized(self):
         if not PASSWORD:
             return True
+        pwd = self.headers.get("X-Password", "")
         header = self.headers.get("Authorization", "")
-        if header.startswith("Basic "):
+        if not pwd and header.startswith("Basic "):
             try:
-                _, _, pwd = base64.b64decode(header[6:]).decode().partition(":")
-                if hmac.compare_digest(pwd.encode(), PASSWORD.encode()):
-                    return True
+                pwd = base64.b64decode(header[6:]).decode().partition(":")[2]
             except ValueError:
                 pass
+        if pwd and hmac.compare_digest(pwd.encode(), PASSWORD.encode()):
+            return True
+        if self.path.startswith("/api/"):
+            self.send_json(HTTPStatus.UNAUTHORIZED, {"error": "Неверный пароль сервера", "auth": True})
+            return False
         self.send_response(HTTPStatus.UNAUTHORIZED)
         self.send_header("WWW-Authenticate", 'Basic realm="Insta Saver", charset="UTF-8"')
         self.send_header("Content-Length", "0")
@@ -162,6 +179,8 @@ class Handler(SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         params = urllib.parse.parse_qs(parsed.query)
         try:
+            if parsed.path == "/api/ping":
+                return self.send_json(200, {"ok": True})
             if parsed.path == "/api/info":
                 return self.send_json(200, fetch_info(validate_url(params.get("url", [""])[0])))
             if parsed.path == "/api/download":
