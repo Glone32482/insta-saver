@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: insta-saver
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: APP_PASSWORD
+        generateValue: true
+      - key: INSTA_COOKIES
+        sync: false
